@@ -81,12 +81,17 @@ def export_and_upload():
     finally:
         pw.stop()
 
-    # Step 2: Read Excel and POST data payload to Received Laptops Web App
-    print("[2/3] Reading Excel file and sending payload to Google Drive / Sheets...")
+    # Step 2: Read Excel and format date/datetime objects to strings
+    print("[2/3] Reading Excel file and preparing JSON payload...")
     df = pd.read_excel(CURRENT_FILE).fillna("")
+    
+    # Convert any datetime/date columns to string format so JSON can serialize them
+    for col in df.select_dtypes(include=['datetime', 'datetime64']).columns:
+        df[col] = df[col].dt.strftime('%Y-%m-%d %H:%M:%S')
+
     rows_data = df.values.tolist()
 
-    # Step 3: POST data to your Web App
+    # Step 3: POST data to Web App
     response = requests.post(WEB_APP_URL, json=rows_data)
     print(f" -> Web App Response: {response.text}")
 

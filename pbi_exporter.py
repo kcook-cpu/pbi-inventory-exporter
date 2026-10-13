@@ -81,19 +81,22 @@ def export_and_upload():
     finally:
         pw.stop()
 
-    # Step 2: Read Excel and format date/datetime objects to strings
+    # Step 2: Read Excel and convert EVERYTHING to strings for clean JSON serialization
     print("[2/3] Reading Excel file and preparing JSON payload...")
     df = pd.read_excel(CURRENT_FILE).fillna("")
     
-    # Convert any datetime/date columns to string format so JSON can serialize them
-    for col in df.select_dtypes(include=['datetime', 'datetime64']).columns:
-        df[col] = df[col].dt.strftime('%Y-%m-%d %H:%M:%S')
+    # Convert every single column to string format to eliminate all datetime objects
+    df_str = df.astype(str)
 
-    rows_data = df.values.tolist()
+    rows_data = df_str.values.tolist()
 
     # Step 3: POST data to Web App
+    print("[3/3] Sending payload to Google Sheets Web App...")
     response = requests.post(WEB_APP_URL, json=rows_data)
     print(f" -> Web App Response: {response.text}")
+
+if __name__ == "__main__":
+    export_and_upload()
 
 if __name__ == "__main__":
     export_and_upload()

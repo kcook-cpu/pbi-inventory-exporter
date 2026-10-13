@@ -5,12 +5,12 @@ import requests
 import pandas as pd
 from playwright.sync_api import sync_playwright
 
-# Configurations
 REPORT_URL = "https://app.powerbi.com/groups/me/reports/b569d766-6d6a-4b19-88f5-694caf7add19/d95d619fc9aea1637cba?ctid=87b66f08-478c-40ad-bb09-5e93796da295&experience=power-bi&bookmarkGuid=d1eeaa6b-8551-43cb-876c-06f17e654444"
-WEB_APP_URL = os.environ.get("WEB_APP_URL") # Received Laptops Web App Endpoint
+WEB_APP_URL = os.environ.get("WEB_APP_URL")
+PBI_USER = os.environ.get("PBI_USER")
+PBI_PASS = os.environ.get("PBI_PASS")
 
 CURRENT_FILE = "/tmp/Inventory_Current.xlsx"
-STATE_FILE = "state.json"
 
 def export_and_upload():
     pw = sync_playwright().start()
@@ -22,26 +22,37 @@ def export_and_upload():
             args=["--no-sandbox", "--disable-setuid-sandbox"]
         )
 
-        context_options = {
-            "accept_downloads": True,
-            "permissions": ["clipboard-read", "clipboard-write"]
-        }
-
-        if os.path.exists(STATE_FILE):
-            context_options["storage_state"] = STATE_FILE
-
-        context = browser.new_context(**context_options)
+        context = browser.new_context(accept_downloads=True)
         page = context.new_page()
 
-        print("[1/3] Navigating to Power BI Report...")
+        print("[1/3] Navigating to Power BI...")
         page.goto(REPORT_URL)
 
+        # Handle automated login if login prompt appears
         try:
-            page.wait_for_selector('text="Sublocation"', timeout=20000)
+            if page.locator('input[type="email"]').is_visible(timeout=5000):
+                print(" -> Logging into Microsoft account...")
+                page.fill('input[type="email"]', PBI_USER)
+                page.click('input[type="submit"]')
+                time.sleep(2)
+                
+                page.fill('input[type="password"]', PBI_PASS)
+                page.click('input[type="submit"]')
+                time.sleep(2)
+                
+                # Click "Stay signed in" if prompted
+                if page.locator('input[id="idSIButton9"]').is_visible(timeout=3000):
+                    page.click('input[id="idSIButton9"]')
+        except Exception as e:
+            print(f" -> Login step skipped/passed: {e}")
+
+        # Wait for table
+        try:
+            page.wait_for_selector('text="Sublocation"', timeout=30000)
         except Exception:
             page.wait_for_selector('text="Sublocation"', timeout=120000)
 
-        # Focus & click export options
+        # Export table
         sublocation_header = page.locator('text="Sublocation"').first
         sublocation_header.focus()
         sublocation_header.hover()
@@ -73,7 +84,7 @@ def export_and_upload():
 
         download = download_info.value
         download.save_as(CURRENT_FILE)
-        print(f" -> Export downloaded locally: {CURRENT_FILE}")
+        print(f" -> Export downloaded: {CURRENT_FILE}")
 
         context.close()
         browser.close()
@@ -81,12 +92,10 @@ def export_and_upload():
     finally:
         pw.stop()
 
-    # Step 2: Read Excel and POST data payload to Received Laptops Web App
     print("[2/3] Reading Excel file and sending payload to Google Drive / Sheets...")
     df = pd.read_excel(CURRENT_FILE).fillna("")
     rows_data = df.values.tolist()
 
-    # Step 3: POST data to your Web App
     response = requests.post(WEB_APP_URL, json=rows_data)
     print(f" -> Web App Response: {response.text}")
 
